@@ -4,6 +4,7 @@ module Egnyte
 
     attr_accessor :data
     ### Representative Structure of @data
+    # v1
     # {
     #   'users': {
     #     'jsmith': 'Full',
@@ -14,10 +15,23 @@ module Egnyte
     #     'partners': 'Viewer'
     #   }
     # }
+
+    # v2
+    # {
+    #   "userPerms": {
+    #     "jsmith": "Viewer",
+    #     "ajones": "Editor"
+    #   },
+    #   "groupPerms": {
+    #     "Project Team": "Full",
+    #     "Contractors": "None"
+    #   }
+    # }
+
     @@valid_perm_levels = ["None", "Viewer", "Editor", "Full", "Owner"]
 
     def initialize(permissions_hash={})
-      raise Egnyte::InvalidParameters unless (permissions_hash.empty? or permissions_hash['users'] or permissions_hash['groups'])
+      raise Egnyte::InvalidParameters unless (permissions_hash.empty? or permissions_hash['userPerms'] or permissions_hash['groupPerms'])
       @data = empty_permissions_hash
       merge!(permissions_hash)
     end
@@ -27,10 +41,7 @@ module Egnyte
       new_perm_set = new_perm_set.data if new_perm_set.class == Egnyte::Permission
       raise Egnyte::InvalidParameters unless new_perm_set.class == Hash
       new_perm_set.each do |type, perms_hash|
-        perms_hash.each do |username, permission|
-          permission.capitalize!
-          old_perm_set[type][username] = permission if ["None", "Viewer", "Editor", "Full", "Owner"].include? permission
-        end
+        old_perm_set[type] = perms_hash
       end
       old_perm_set
     end
@@ -44,7 +55,7 @@ module Egnyte
     end
 
     def self.empty_permissions_hash
-      { 'users' => {}, 'groups' => {} }
+      { 'userPerms' => {}, 'groupPerms' => {} }
     end
 
     def self.build_from_api_listing(json_listing)
@@ -85,15 +96,15 @@ module Egnyte
     end
 
     def self.permission_path(session)
-      "https://#{session.domain}.#{EGNYTE_DOMAIN}/#{session.api}/v1/perms/folder"
+      "https://#{session.domain}.#{EGNYTE_DOMAIN}/#{session.api}/v2/perms"
     end
 
     def valid?
-      return @data['users'].class == Hash && @data['groups'].class == Hash
+      return @data['userPerms'].class == Hash && @data['groupPerms'].class == Hash
     end
 
     def has_data?
-      return @data['users'].size > 0 || @data['groups'].size > 0
+      return @data['userPerms'].size > 0 || @data['groupPerms'].size > 0
     end
 
     def empty?
@@ -112,33 +123,9 @@ module Egnyte
       to_json
     end
 
-    def self.transfrom_by_perm_level(permission_object)
-      perm_type_hash = {
-        'users' => { "None" => [], "Viewer" => [], "Editor" => [], "Full"   => [], "Owner"  => [] },
-        'groups' => { "None" => [], "Viewer" => [], "Editor" => [], "Full"   => [], "Owner"  => [] }
-      }
-      permission_object.data.each do |type, perm|
-        perm.each do |k,v|
-          perm_type_hash[type][v] << k
-        end
-      end
-      perm_type_hash
-    end
-
     def self.apply(session, permission_object, target_path)
       if permission_object.valid? and permission_object.has_data?
-        permissions_set = transfrom_by_perm_level(permission_object)
-        ["None", "Viewer", "Editor", "Full", "Owner"].each do |level|
-          tmp_hash = {}
-          tmp_hash['users']  = permissions_set['users'][level] unless permissions_set['users'].nil?
-          tmp_hash['groups'] = permissions_set['groups'][level] unless permissions_set['groups'].nil?
-          tmp_hash['permission'] = level
-          unless tmp_hash['users'].nil? and tmp_hash['groups'].nil?
-            unless tmp_hash['users'].empty? and tmp_hash['groups'].empty?
-              session.post("#{self.permission_path(session)}/#{target_path}", tmp_hash.to_json, false)
-            end
-          end
-        end
+          session.post("#{self.permission_path(session)}/#{target_path}", permission_object.data.to_json, false)
         "Permissions set on #{target_path}: #{permission_object.to_hash}"
       end
     end
