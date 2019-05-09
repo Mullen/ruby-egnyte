@@ -35,11 +35,16 @@ module Egnyte
       }, session)
     end
 
+    def patch(options)
+      response = session.patch("#{Egnyte::Item.fs_path(session)}#{path}", JSON.dump(options))
+      update_data(response)
+    end
+
     def delete
       Egnyte::Folder.delete(@session, path)
     end
 
-    def self.delete(session, path)      
+    def self.delete(session, path)
       session.delete("#{Egnyte::Item.fs_path(session)}/#{path}")
     end
 
@@ -72,7 +77,7 @@ module Egnyte
       folder = Folder.new({
         'path' => path
       }, session)
-      
+
       parsed_body = session.get("#{folder.fs_path}#{path}")
 
       raise FolderExpected unless parsed_body['is_folder']
